@@ -1,5 +1,6 @@
 import numpy as np
 from Bio.PDB import PDBParser
+import os
 
 # ================================================================================================================================
 #   DISORDER (pLDDT) Fractions
@@ -188,7 +189,8 @@ def getOrderedFractionsFromPDB_Config(PDBpath, CONFIG, startRes=None, endRes=Non
                                       endRes=endRes)
 
 # ================================================================================================================================
-#   Functions From AlphaFold Matches DataFrames (See https://github.com/jackent601/CheckAlphaFoldPDBSequences)
+#   Functions For Data Frames with AlphaFold Sequence Matches Information 
+#   See https://github.com/jackent601/CheckAlphaFoldPDBSequences for examples/generation
 # ================================================================================================================================
 def addOrderFractionToDFofAFMatches(AFMatchDF, 
                                     pathToPDBRootDir, 
