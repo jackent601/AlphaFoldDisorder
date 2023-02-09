@@ -4,11 +4,13 @@ from Bio.PDB import PDBParser
 #   DISORDER (pLDDT) Fractions
 # ================================================================================================================================
 
+
 def getpLDDTsFromAlphaFoldPDBModel(pdb_model):
     """
     AlphaFold stores plDDT as B-factor, pLDDT calculated per residue to only need to query first atom, returns array of pLDDT values (per residue)
     """
     return np.array([next(r.get_atoms()).get_bfactor() for r in pdb_model.get_residues()])
+
 
 def getpLDDTsSubSequenceFromAlphaFoldPDBModel(pdb_model, startRes=None, endRes=None):
     """
@@ -31,6 +33,7 @@ def getpLDDTsSubSequenceFromAlphaFoldPDBModel(pdb_model, startRes=None, endRes=N
 
         return getpLDDTsFromAlphaFoldPDBModel(pdb_model)[startRes-1:endRes]
 
+
 def getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTThreshold, aboveThreshold=False):
     """
     finds the length of all stretches of residues consecutively below (or above if flag set) a pLDDT threshold i.e. 'disordered' (or 'ordered') stretches
@@ -42,18 +45,19 @@ def getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTThreshold, aboveThreshold=Fals
         pLDDTIndices = np.argwhere(pLDDTs >= pLDDTThreshold)[:, 0]
     else:
         pLDDTIndices = np.argwhere(pLDDTs <= pLDDTThreshold)[:, 0]
-    
+
     # Catch Case of No Disorder (within threshold)
     if len(pLDDTIndices) == 0:
         return None, None
-    
-    # Need to duplicate final index value for calculating the lengths below in while loop 
+
+    # Need to duplicate final index value for calculating the lengths below in while loop
     pLDDTIndices = np.append(pLDDTIndices, pLDDTIndices[-1])
 
-    # Find where difference between adjacent indices is greater than 1 
+    # Find where difference between adjacent indices is greater than 1
     # (This indicates the begining of a new stretch of consecutively low pLDDTs regions)
     # (Adds one to correct for shifting array)
-    consecutivepLDDTIndices = np.where(pLDDTIndices[1:] - pLDDTIndices[:-1] > 1)[0] + 1
+    consecutivepLDDTIndices = np.where(
+        pLDDTIndices[1:] - pLDDTIndices[:-1] > 1)[0] + 1
 
     # Prepends with zero to account for first length
     consecutivepLDDTIndices = np.insert(consecutivepLDDTIndices, 0, 0)
@@ -68,12 +72,14 @@ def getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTThreshold, aboveThreshold=Fals
             _idx += 1
         consecutiveLens[i] = _length
     return consecutivepLDDTIndices, consecutiveLens
-    
+
+
 def getConsecutiveDisorderedFrompLDDTs(pLDDTs, pLDDTDisorderThreshold):
     """
     getConsecutivepLDDTFromThreshold with above flag set to false
     """
     return getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTDisorderThreshold, aboveThreshold=False)
+
 
 def getConsecutiveOrderedFrompLDDTs(pLDDTs, pLDDTOrderThreshold):
     """
@@ -81,26 +87,31 @@ def getConsecutiveOrderedFrompLDDTs(pLDDTs, pLDDTOrderThreshold):
     """
     return getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTOrderThreshold, aboveThreshold=True)
 
+
 def getFractionFrompLDDTs(pLDDTs, pLDDTThreshold, numberConsectuivelyDisorderThreshold, aboveThreshold=False):
     """
     Uses getConsecutivepLDDTFromThreshold to get length of all stretches of residues consecutively above or below a pLDDT threshold (depending on aboveThreshold flag) 
     Then filters lengths for those above or equal to length threshold
     Returns the ordered 'fraction', along with raw lengths of ordered residues within stretches above threshold
     """
-    orderedStretchesIndices, orderedStretchesLengths = getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTThreshold, aboveThreshold=aboveThreshold)
+    orderedStretchesIndices, orderedStretchesLengths = getConsecutivepLDDTFromThreshold(
+        pLDDTs, pLDDTThreshold, aboveThreshold=aboveThreshold)
 
     if orderedStretchesIndices is None or orderedStretchesIndices is None:
         return 0, None
-    
-    orderedLengthsFiltered = orderedStretchesLengths[orderedStretchesLengths >= numberConsectuivelyDisorderThreshold]
-    
+
+    orderedLengthsFiltered = orderedStretchesLengths[orderedStretchesLengths >=
+                                                     numberConsectuivelyDisorderThreshold]
+
     return sum(orderedLengthsFiltered)/len(pLDDTs), orderedLengthsFiltered
+
 
 def getOrderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold):
     """
     getFractionFrompLDDTs with above flag set to True to find ordered sequences
     """
     return getFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold, True)
+
 
 def getDisorderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold):
     """
@@ -111,6 +122,7 @@ def getDisorderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsec
 # ================================================================================================================================
 #   Functions From PDB Paths
 # ================================================================================================================================
+
 
 def getDisorderedFractionFromPDB(PDBpath, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold, startRes=None, endRes=None):
     """
@@ -124,10 +136,12 @@ def getDisorderedFractionFromPDB(PDBpath, pLDDTDisorderThreshold, numberConsectu
     pdb_model = structure[0]
 
     # Get pLDDTs
-    pLDDTs = getpLDDTsSubSequenceFromAlphaFoldPDBModel(pdb_model, startRes=startRes, endRes=endRes)
+    pLDDTs = getpLDDTsSubSequenceFromAlphaFoldPDBModel(
+        pdb_model, startRes=startRes, endRes=endRes)
 
     # Get 'disordered' fractions
     return getDisorderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold)
+
 
 def getOrderedFractionsFromPDB(PDBpath, pLDDTDisorderThreshold, pLDDTOrderThreshold, numberConsectuivelyDisorderThreshold, numberConsectuivelyOrderThreshold, startRes=None, endRes=None):
     """
@@ -142,30 +156,34 @@ def getOrderedFractionsFromPDB(PDBpath, pLDDTDisorderThreshold, pLDDTOrderThresh
     pdb_model = structure[0]
 
     # Get pLDDTs
-    pLDDTs = getpLDDTsSubSequenceFromAlphaFoldPDBModel(pdb_model, startRes=startRes, endRes=endRes)
+    pLDDTs = getpLDDTsSubSequenceFromAlphaFoldPDBModel(
+        pdb_model, startRes=startRes, endRes=endRes)
 
     # Get 'disordered' fractions
-    dFrac, dLengths = getDisorderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold)
+    dFrac, dLengths = getDisorderedFractionFrompLDDTs(
+        pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold)
 
     # Get 'Ordered' fractions
-    oFrac, oLengths = getOrderedFractionFrompLDDTs(pLDDTs, pLDDTOrderThreshold, numberConsectuivelyOrderThreshold)
+    oFrac, oLengths = getOrderedFractionFrompLDDTs(
+        pLDDTs, pLDDTOrderThreshold, numberConsectuivelyOrderThreshold)
 
     return dFrac, dLengths, oFrac, oLengths
+
 
 def getOrderedFractionsFromPDB_Config(PDBpath, CONFIG, startRes=None, endRes=None):
     """
     see getOrderedFractionsFromPDB, identical but uses config dictionary to tidy code
     """
     # unpack CONFIG
-    pLDDT_DisorderThreshold = CONFIG['pLDDT_DISORDER_THRESHOLD'] 
+    pLDDT_DisorderThreshold = CONFIG['pLDDT_DISORDER_THRESHOLD']
     pLDDT_OrderThreshold = CONFIG['pLDDT_ORDER_THRESHOLD']
-    ConsecutiveDisorderThreshold = CONFIG['CONSECUTIVE_DISORDER_THRESHOLD'] 
+    ConsecutiveDisorderThreshold = CONFIG['CONSECUTIVE_DISORDER_THRESHOLD']
     ConsecutiveOrderThreshold = CONFIG['CONSECUTIVE_ORDER_THRESHOLD']
 
-    return getOrderedFractionsFromPDB(PDBpath, 
-    pLDDT_DisorderThreshold, 
-    pLDDT_OrderThreshold, 
-    ConsecutiveDisorderThreshold, 
-    ConsecutiveOrderThreshold, 
-    startRes=startRes, 
-    endRes=endRes)
+    return getOrderedFractionsFromPDB(PDBpath,
+                                      pLDDT_DisorderThreshold,
+                                      pLDDT_OrderThreshold,
+                                      ConsecutiveDisorderThreshold,
+                                      ConsecutiveOrderThreshold,
+                                      startRes=startRes,
+                                      endRes=endRes)
