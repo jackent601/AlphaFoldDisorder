@@ -81,20 +81,32 @@ def getConsecutiveOrderedFrompLDDTs(pLDDTs, pLDDTOrderThreshold):
     """
     return getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTOrderThreshold, aboveThreshold=True)
 
-def getDisorderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold):
+def getFractionFrompLDDTs(pLDDTs, pLDDTThreshold, numberConsectuivelyDisorderThreshold, aboveThreshold=False):
     """
-    Uses getConsecutiveDisorderLengthsFrompLDDTs to get length of all stretches of residues consecutively below a pLDDT threshold (i.e. 'disordered' stretches) 
+    Uses getConsecutivepLDDTFromThreshold to get length of all stretches of residues consecutively above or below a pLDDT threshold (depending on aboveThreshold flag) 
     Then filters lengths for those above or equal to length threshold
-    Returns the disordered 'fraction', along with raw lengths of disordered residues within stretches above threshold
+    Returns the ordered 'fraction', along with raw lengths of ordered residues within stretches above threshold
     """
-    disorderedStretchesIndices, disorderedStretchesLengths = getConsecutiveDisorderedFrompLDDTs(pLDDTs, pLDDTDisorderThreshold)
+    orderedStretchesIndices, orderedStretchesLengths = getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTThreshold, aboveThreshold=aboveThreshold)
 
-    if disorderedStretchesIndices is None or disorderedStretchesLengths is None:
+    if orderedStretchesIndices is None or orderedStretchesIndices is None:
         return 0, None
     
-    disorderedLengthsFiltered = disorderedStretchesLengths[disorderedStretchesLengths >= numberConsectuivelyDisorderThreshold]
+    orderedLengthsFiltered = orderedStretchesLengths[orderedStretchesLengths >= numberConsectuivelyDisorderThreshold]
     
-    return sum(disorderedLengthsFiltered)/len(pLDDTs), disorderedLengthsFiltered
+    return sum(orderedLengthsFiltered)/len(pLDDTs), orderedLengthsFiltered
+
+def getOrderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold):
+    """
+    getFractionFrompLDDTs with above flag set to True to find ordered sequences
+    """
+    return getFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold, True)
+
+def getDisorderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold):
+    """
+    getFractionFrompLDDTs with above flag set to False to find Disordered sequences
+    """
+    return getFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold, False)
 
 # ================================================================================================================================
 #   Functions From PDB Paths
@@ -116,3 +128,44 @@ def getDisorderedFractionFromPDB(PDBpath, pLDDTDisorderThreshold, numberConsectu
 
     # Get 'disordered' fractions
     return getDisorderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold)
+
+def getOrderedFractionsFromPDB(PDBpath, pLDDTDisorderThreshold, pLDDTOrderThreshold, numberConsectuivelyDisorderThreshold, numberConsectuivelyOrderThreshold, startRes=None, endRes=None):
+    """
+    Reads directly from a PDB path, including option to sub sequence
+    Gets ordered and disordered fractions
+    """
+    # Read PDB
+    parser = PDBParser()
+    structure = parser.get_structure('auto_read', PDBpath)
+
+    # Get Model, AlphaFold PDBs only have 1
+    pdb_model = structure[0]
+
+    # Get pLDDTs
+    pLDDTs = getpLDDTsSubSequenceFromAlphaFoldPDBModel(pdb_model, startRes=startRes, endRes=endRes)
+
+    # Get 'disordered' fractions
+    dFrac, dLengths = getDisorderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold)
+
+    # Get 'Ordered' fractions
+    oFrac, oLengths = getOrderedFractionFrompLDDTs(pLDDTs, pLDDTOrderThreshold, numberConsectuivelyOrderThreshold)
+
+    return dFrac, dLengths, oFrac, oLengths
+
+def getOrderedFractionsFromPDB_Config(PDBpath, CONFIG, startRes=None, endRes=None):
+    """
+    see getOrderedFractionsFromPDB, identical but uses config dictionary to tidy code
+    """
+    # unpack CONFIG
+    pLDDT_DisorderThreshold = CONFIG['pLDDT_DISORDER_THRESHOLD'] 
+    pLDDT_OrderThreshold = CONFIG['pLDDT_ORDER_THRESHOLD']
+    ConsecutiveDisorderThreshold = CONFIG['CONSECUTIVE_DISORDER_THRESHOLD'] 
+    ConsecutiveOrderThreshold = CONFIG['CONSECUTIVE_ORDER_THRESHOLD']
+
+    return getOrderedFractionsFromPDB(PDBpath, 
+    pLDDT_DisorderThreshold, 
+    pLDDT_OrderThreshold, 
+    ConsecutiveDisorderThreshold, 
+    ConsecutiveOrderThreshold, 
+    startRes=startRes, 
+    endRes=endRes)
