@@ -43,6 +43,10 @@ def getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTThreshold, aboveThreshold=Fals
     else:
         pLDDTIndices = np.argwhere(pLDDTs <= pLDDTThreshold)[:, 0]
     
+    # Catch Case of No Disorder (within threshold)
+    if len(pLDDTIndices) == 0:
+        return None, None
+    
     # Need to duplicate final index value for calculating the lengths below in while loop 
     pLDDTIndices = np.append(pLDDTIndices, pLDDTIndices[-1])
 
@@ -84,6 +88,9 @@ def getDisorderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsec
     Returns the disordered 'fraction', along with raw lengths of disordered residues within stretches above threshold
     """
     disorderedStretchesIndices, disorderedStretchesLengths = getConsecutiveDisorderedFrompLDDTs(pLDDTs, pLDDTDisorderThreshold)
+
+    if disorderedStretchesIndices is None or disorderedStretchesLengths is None:
+        return 0, None
     
     disorderedLengthsFiltered = disorderedStretchesLengths[disorderedStretchesLengths >= numberConsectuivelyDisorderThreshold]
     
