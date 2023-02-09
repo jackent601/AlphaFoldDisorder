@@ -1,9 +1,9 @@
 import numpy as np
 from Bio.PDB import PDBParser
+
 # ================================================================================================================================
 #   DISORDER (pLDDT) Fractions
 # ================================================================================================================================
-
 
 def getpLDDTsFromAlphaFoldPDBModel(pdb_model):
     """
@@ -123,7 +123,6 @@ def getDisorderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsec
 #   Functions From PDB Paths
 # ================================================================================================================================
 
-
 def getDisorderedFractionFromPDB(PDBpath, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold, startRes=None, endRes=None):
     """
     getDisorderedFractionFrompLDDTs but reads directly from a PDB path, including option to sub sequence
@@ -187,3 +186,90 @@ def getOrderedFractionsFromPDB_Config(PDBpath, CONFIG, startRes=None, endRes=Non
                                       ConsecutiveOrderThreshold,
                                       startRes=startRes,
                                       endRes=endRes)
+
+# ================================================================================================================================
+#   Functions From AlphaFold Matches DataFrames (See https://github.com/jackent601/CheckAlphaFoldPDBSequences)
+# ================================================================================================================================
+def addOrderFractionToDFofAFMatches(AFMatchDF, 
+                                    pathToPDBRootDir, 
+                                    pLDDT_DisorderThreshold, 
+                                    pLDDT_OrderThreshold,
+                                    ConsecutiveDisorderThreshold, 
+                                    ConsecutiveOrderThreshold,
+                                    debug=False):
+    """
+    pathToPDBRootDir: path to pdb root diectory    
+    pLDDT_DisorderThreshold: Threshold to determine disordered residues (pLDDT below or equal to)
+    pLDDT_OrderThreshold: Threshold to determine Ordered residues (pLDDT aobve or equal to)
+    ConsecutiveDisorderThreshold: Length of consecutive disordered residues to determined to be disordered
+    ConsecutiveOrderThreshold: Length of consecutive ordered residues to determined to be ordered
+    
+    AFMatchDF: Dataframe of AlphaFold Sequence match information 
+        (see Check Alpha Fold Sequence Info at https://github.com/jackent601/CheckAlphaFoldPDBSequences)
+    Dataframe must have the following features:
+        PDB_path: local path to pdb file
+        ExactMatch: Whether exact sequence match
+        AFStartResidueOverlap: if not exact match which AF residue to read from
+        AFEndResidueOverlap: if not exact match which AF residue to read to
+    """
+    # Initialise
+    dFracs = []
+    oFracs = []
+    
+    # Iterate DF
+    for index, row in AFMatchDF.iterrows():
+        # Extract DF Info
+        full_pdb_path = os.path.join(pathToPDBRootDir, row['PDB_path'])
+        ExactMatch = row['ExactMatch']
+        _debug = f'{os.path.split(full_pdb_path)[1]}'
+
+        # Get Sequence Read Info
+        if ExactMatch:
+            startResRead = None
+            endResRead = None
+            _debug += ' - Exact Match, '
+        else:
+            startResRead = row['AFStartResidueOverlap']
+            endResRead = row['AFEndResidueOverlap']
+            _debug += f' - Truncated Match, read from res {startResRead} to res {endResRead} '
+        
+        # Calculate Order Fractions
+        dFrac, _, oFrac, _ = getOrderedFractionsFromPDB(full_pdb_path,
+                                                                      pLDDT_DisorderThreshold,
+                                                                      pLDDT_OrderThreshold,
+                                                                      ConsecutiveDisorderThreshold,
+                                                                      ConsecutiveOrderThreshold,
+                                                                      startRes=startResRead,
+                                                                      endRes=endResRead)
+        # Add to lists
+        dFracs.append(dFrac)
+        oFracs.append(oFrac)
+        
+        # Debug
+        _debug += f'\n\tDisordered Frac: {100*dFrac:0.1f}, Order Frac: {100*oFrac:0.1f}'
+        if debug:
+            print(_debug)
+        
+    # Add Fractions to DF
+    AFMatchDF['DisorderedFrac'] = dFracs
+    AFMatchDF['OrderedFrac'] = oFracs
+    return AFMatchDF
+
+def addOrderFractionToDFofAFMatches_Config(AFMatchDF, CONFIG, debug=False):
+    """
+    See addOrderFractionToDFofAFMatches, identical but uses config dictionary to tidy code
+    """
+    # Unpack CONFIG
+    pathToPDBRootDir = CONFIG['PATH_TO_ROOT_PDB']
+    pLDDT_DisorderThreshold = CONFIG['pLDDT_DISORDER_THRESHOLD'] 
+    pLDDT_OrderThreshold = CONFIG['pLDDT_ORDER_THRESHOLD']
+    ConsecutiveDisorderThreshold = CONFIG['CONSECUTIVE_DISORDER_THRESHOLD'] 
+    ConsecutiveOrderThreshold = CONFIG['CONSECUTIVE_ORDER_THRESHOLD']
+    
+    return addOrderFractionToDFofAFMatches(AFMatchDF,
+                                           pathToPDBRootDir,
+                                           pLDDT_DisorderThreshold,
+                                           pLDDT_OrderThreshold,
+                                           ConsecutiveDisorderThreshold,
+                                           ConsecutiveOrderThreshold,
+                                           debug=debug)
