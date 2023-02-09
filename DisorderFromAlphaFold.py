@@ -19,38 +19,63 @@ def getpLDDTsSubSequenceFromAlphaFoldPDBModel(pdb_model, startRes=None, endRes=N
         return getpLDDTsFromAlphaFoldPDBModel(pdb_model)
     else:
         # filter for subsequence
+        # Check both bounds provided
         assert startRes is not None and endRes is not None, "Must provide BOTH of start res and end res if specified"
+        # SubSequencing Checks
+        assert startRes <= endRes, "Start Residue number sub-sequence is greater than end residue number!"
+        # Check Residue length is not larger than AlphaFold sequence
+        _AFSequenceLength = len(list(pdb_model.get_residues()))
+        assert endRes - startRes <= _AFSequenceLength, "Residue Sub Selection larger than AlphaFold sequence!"
+        # Check bounds within AlphaFold Sequence
+        assert endRes <= _AFSequenceLength, "Residue Sub Selection outside of AlphaFold Sequence!"
+
         return getpLDDTsFromAlphaFoldPDBModel(pdb_model)[startRes-1:endRes]
-    
-def getConsecutiveDisorderLengthsFrompLDDTs(pLDDTs, pLDDTDisorderThreshold):
+
+def getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTThreshold, aboveThreshold=False):
     """
-    finds the length of all stretches of residues consecutively below a pLDDT threshold (i.e. 'disordered' stretches) 
+    finds the length of all stretches of residues consecutively below (or above if flag set) a pLDDT threshold i.e. 'disordered' (or 'ordered') stretches
+    returns both the list of indices where each stretch starts, and the length of each stretch
     pLDDTs should be an array of pLDDTs from AF PDB file
     """
     # Finds indices in pLDDT list that are below threshold
-    LowpLDDTIndices = np.argwhere(pLDDTs <= pLDDTDisorderThreshold)[:, 0]
-
+    if aboveThreshold:
+        pLDDTIndices = np.argwhere(pLDDTs >= pLDDTThreshold)[:, 0]
+    else:
+        pLDDTIndices = np.argwhere(pLDDTs <= pLDDTThreshold)[:, 0]
+    
     # Need to duplicate final index value for calculating the lengths below in while loop 
-    LowpLDDTIndices = np.append(LowpLDDTIndices, LowpLDDTIndices[-1])
+    pLDDTIndices = np.append(pLDDTIndices, pLDDTIndices[-1])
 
     # Find where difference between adjacent indices is greater than 1 
     # (This indicates the begining of a new stretch of consecutively low pLDDTs regions)
     # (Adds one to correct for shifting array)
-    consecutiveLowpLDDTIndices = np.where(LowpLDDTIndices[1:] - LowpLDDTIndices[:-1] > 1)[0] + 1
+    consecutivepLDDTIndices = np.where(pLDDTIndices[1:] - pLDDTIndices[:-1] > 1)[0] + 1
 
     # Prepends with zero to account for first length
-    consecutiveLowpLDDTIndices = np.insert(consecutiveLowpLDDTIndices, 0, 0)
+    consecutivepLDDTIndices = np.insert(consecutivepLDDTIndices, 0, 0)
 
     # Calculate length of each consecutively low pLDDT sequence
-    consecutiveLens = np.zeros(len(consecutiveLowpLDDTIndices)).astype(np.int64)
-    for i in range(len(consecutiveLowpLDDTIndices)):
+    consecutiveLens = np.zeros(len(consecutivepLDDTIndices)).astype(np.int64)
+    for i in range(len(consecutivepLDDTIndices)):
         _length = 1
-        _idx = consecutiveLowpLDDTIndices[i]
-        while LowpLDDTIndices[_idx+1] == LowpLDDTIndices[_idx] + 1:
+        _idx = consecutivepLDDTIndices[i]
+        while pLDDTIndices[_idx+1] == pLDDTIndices[_idx] + 1:
             _length += 1
             _idx += 1
         consecutiveLens[i] = _length
-    return consecutiveLens
+    return consecutivepLDDTIndices, consecutiveLens
+    
+def getConsecutiveDisorderedFrompLDDTs(pLDDTs, pLDDTDisorderThreshold):
+    """
+    getConsecutivepLDDTFromThreshold with above flag set to false
+    """
+    return getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTDisorderThreshold, aboveThreshold=False)
+
+def getConsecutiveOrderedFrompLDDTs(pLDDTs, pLDDTOrderThreshold):
+    """
+    getConsecutivepLDDTFromThreshold with above flag set to True
+    """
+    return getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTOrderThreshold, aboveThreshold=True)
 
 def getDisorderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold):
     """
@@ -58,9 +83,9 @@ def getDisorderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsec
     Then filters lengths for those above or equal to length threshold
     Returns the disordered 'fraction', along with raw lengths of disordered residues within stretches above threshold
     """
-    disorderedLengths = getConsecutiveDisorderLengthsFrompLDDTs(pLDDTs, pLDDTDisorderThreshold)
+    disorderedStretchesIndices, disorderedStretchesLengths = getConsecutiveDisorderedFrompLDDTs(pLDDTs, pLDDTDisorderThreshold)
     
-    disorderedLengthsFiltered = disorderedLengths[disorderedLengths >= numberConsectuivelyDisorderThreshold]
+    disorderedLengthsFiltered = disorderedStretchesLengths[disorderedStretchesLengths >= numberConsectuivelyDisorderThreshold]
     
     return sum(disorderedLengthsFiltered)/len(pLDDTs), disorderedLengthsFiltered
 
