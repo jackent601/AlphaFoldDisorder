@@ -20,4 +20,4 @@ Example of running fraction calculations for multiple proteins where sequence ma
 
 ## Next Steps
 
-- 
+- Write wrapper to calculate features from disordered/ordered fraction sub-setting
