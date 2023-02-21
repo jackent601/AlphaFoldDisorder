@@ -3,7 +3,7 @@ from Bio.PDB import PDBParser
 import os
 
 # ================================================================================================================================
-#   DISORDER (pLDDT) Fractions
+#   (DIS)ORDER (pLDDT) REGIONS
 # ================================================================================================================================
 
 def getpLDDTsFromAlphaFoldPDBModel(pdb_model):
@@ -35,11 +35,10 @@ def getpLDDTsSubSequenceFromAlphaFoldPDBModel(pdb_model, startRes=None, endRes=N
         return getpLDDTsFromAlphaFoldPDBModel(pdb_model)[startRes-1:endRes]
 
 
-def getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTThreshold, aboveThreshold=False):
+def getpLDDTRegionsFromThreshold(pLDDTs, pLDDTThreshold, aboveThreshold=False):
     """
     finds the length of all stretches of residues consecutively below (or above if flag set) a pLDDT threshold i.e. 'disordered' (or 'ordered') stretches
     returns both the list of indices where each stretch starts, and the length of each stretch
-    pLDDTs should be an array of pLDDTs from AF PDB file
     """
     # Finds indices in pLDDT list that are below threshold
     if aboveThreshold:
@@ -57,36 +56,110 @@ def getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTThreshold, aboveThreshold=Fals
     # Find where difference between adjacent indices is greater than 1
     # (This indicates the begining of a new stretch of consecutively low pLDDTs regions)
     # (Adds one to correct for shifting array)
-    consecutivepLDDTIndices = np.where(
+    nonConsecutivepLDDTIndices = np.where(
         pLDDTIndices[1:] - pLDDTIndices[:-1] > 1)[0] + 1
 
     # Prepends with zero to account for first length
-    consecutivepLDDTIndices = np.insert(consecutivepLDDTIndices, 0, 0)
+    nonConsecutivepLDDTIndices = np.insert(nonConsecutivepLDDTIndices, 0, 0)
 
     # Calculate length of each consecutively low pLDDT sequence
-    consecutiveLens = np.zeros(len(consecutivepLDDTIndices)).astype(np.int64)
-    for i in range(len(consecutivepLDDTIndices)):
+    consecutiveLens = np.zeros(len(nonConsecutivepLDDTIndices)).astype(np.int64)
+    for i in range(len(nonConsecutivepLDDTIndices)):
         _length = 1
-        _idx = consecutivepLDDTIndices[i]
+        _idx = nonConsecutivepLDDTIndices[i]
         while pLDDTIndices[_idx+1] == pLDDTIndices[_idx] + 1:
             _length += 1
             _idx += 1
         consecutiveLens[i] = _length
-    return consecutivepLDDTIndices, consecutiveLens
+    return nonConsecutivepLDDTIndices, consecutiveLens
 
+def getLengthFilteredpLDDTRegionsFromThreshold(pLDDT, pLDDTThreshold, lengthThreshold, aboveThreshold=False):
+    """
+    getpLDDTRegionsFromThreshold but also filters for only regions above a certain consecutive length
+    """
+    # Run normal (dis)order calculations to get pLDDT region start indices and lengths
+    orderedStretchesIndices, orderedStretchesLengths = getpLDDTRegionsFromThreshold(pLDDTs=pLDDT,
+    pLDDTThreshold=pLDDTThreshold, 
+    aboveThreshold=aboveThreshold)
 
-def getConsecutiveDisorderedFrompLDDTs(pLDDTs, pLDDTDisorderThreshold):
+    # Filter for only those indices above the consecutive residue threshold
+    orderedStretchesIndicesLengthFiltered = orderedStretchesIndices[orderedStretchesLengths>=lengthThreshold]
+    orderedStretchesLengthsFiltered = orderedStretchesLengths[orderedStretchesLengths>=lengthThreshold]
+
+    return orderedStretchesIndicesLengthFiltered, orderedStretchesLengthsFiltered
+
+def getpLDDTRegionStartStopIndices(pLDDT, pLDDTThreshold, lengthThreshold, aboveThreshold=False):
+    """
+    Rather than return indice start and region length, gets actual indices of region start,stops. returning an array of arrays
+    """ 
+    # Get Region start indices and length (from thresholds)
+    orderedStretchesIndicesLengthFiltered, orderedStretchesLengthsFiltered = getLengthFilteredpLDDTRegionsFromThreshold(pLDDT=pLDDT, 
+    pLDDTThreshold=pLDDTThreshold, 
+    lengthThreshold=lengthThreshold, 
+    aboveThreshold=aboveThreshold)
+
+    # get read-from/read-to indices for each identified region
+    # python indexing is inclusive:exclusive, hence for region starting at index i_start, and length L, region is read by pLDDT[i_start:i_start+L] to read the region
+    return [[start, start+length] for start, length in zip(orderedStretchesIndicesLengthFiltered, orderedStretchesLengthsFiltered)]
+
+def getRegionStartStopResiduesFrompLDDTs(pLDDT, pLDDTThreshold, lengthThreshold, aboveThreshold=False, startRes=None):
+    """
+    Identical to getpLDDTRegionStartStopIndices, but returns RESIDUE NUMBERS (by adding 1 to indices), 
+    option to include original offset (default is no offset, i.e. start residue = 1) compared to whole protein
+    """
+    # Get indices
+    regionIndices = getpLDDTRegionStartStopIndices(pLDDT=pLDDT,
+    pLDDTThreshold=pLDDTThreshold, 
+    lengthThreshold=lengthThreshold,
+    aboveThreshold=aboveThreshold)
+    # Off set from initil subsetting 
+    residueOffset = 1+(startRes-1) if startRes is not None else 1
+    return [[regionPair[0]+residueOffset, regionPair[1]+residueOffset] for regionPair in regionIndices]
+
+def processRegionFrompLDDTs(pdb_model, pLDDTThreshold, lengthThreshold, func, aboveThreshold=False, startRes=None, endRes=None, **kwargs):
+    """
+    Takes an arbitrary function with signature func(model, startResidue, stopResidue, *args) and calls it for each identified region within a pdb model
+    Regions are identified from pLDDT scores based on thresholds
+    """
+    # First get pLDDTs
+    pLDDTs = getpLDDTsSubSequenceFromAlphaFoldPDBModel(pdb_model, startRes=startRes, endRes=endRes)
+    
+    # Get Regions of interest
+    regionResidueStartStopPairs = getRegionStartStopResiduesFrompLDDTs(pLDDTs, pLDDTThreshold, lengthThreshold, aboveThreshold=aboveThreshold, startRes=startRes)
+    
+    # Loop through each region calling functions
+    results = []
+    for regionResidueStartStop in regionResidueStartStopPairs:
+        # Unpack Values
+        _residueStart, _residueStop = regionResidueStartStop
+        # Call Function
+        results.append(func(pdb_model, _residueStart, _residueStop, **kwargs))
+    
+    return results
+
+def getDisorderedRegionsFrompLDDTs(pLDDTs, pLDDTDisorderThreshold):
     """
     getConsecutivepLDDTFromThreshold with above flag set to false
     """
-    return getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTDisorderThreshold, aboveThreshold=False)
+    return getpLDDTRegionsFromThreshold(pLDDTs, pLDDTDisorderThreshold, aboveThreshold=False)
 
-
-def getConsecutiveOrderedFrompLDDTs(pLDDTs, pLDDTOrderThreshold):
+def getOrderedRegionsFrompLDDTs(pLDDTs, pLDDTOrderThreshold):
     """
     getConsecutivepLDDTFromThreshold with above flag set to True
     """
-    return getConsecutivepLDDTFromThreshold(pLDDTs, pLDDTOrderThreshold, aboveThreshold=True)
+    return getpLDDTRegionsFromThreshold(pLDDTs, pLDDTOrderThreshold, aboveThreshold=True)
+
+
+
+
+# ================================================================================================================================
+#   (DIS)ORDER (pLDDT) REGIONS
+# ================================================================================================================================
+
+
+# ================================================================================================================================
+#   (DIS)ORDER (pLDDT) FRACTIONS
+# ================================================================================================================================
 
 
 def getFractionFrompLDDTs(pLDDTs, pLDDTThreshold, numberConsectuivelyDisorderThreshold, aboveThreshold=False):
@@ -95,7 +168,7 @@ def getFractionFrompLDDTs(pLDDTs, pLDDTThreshold, numberConsectuivelyDisorderThr
     Then filters lengths for those above or equal to length threshold
     Returns the ordered 'fraction', along with raw lengths of ordered residues within stretches above threshold
     """
-    orderedStretchesIndices, orderedStretchesLengths = getConsecutivepLDDTFromThreshold(
+    orderedStretchesIndices, orderedStretchesLengths = getpLDDTRegionsFromThreshold(
         pLDDTs, pLDDTThreshold, aboveThreshold=aboveThreshold)
 
     if orderedStretchesIndices is None or orderedStretchesIndices is None:
@@ -120,8 +193,12 @@ def getDisorderedFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsec
     """
     return getFractionFrompLDDTs(pLDDTs, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold, False)
 
+
+
+
+
 # ================================================================================================================================
-#   Functions From PDB Paths
+#   End-To-End Fraction Functions From PDB Paths
 # ================================================================================================================================
 
 def getDisorderedFractionFromPDB(PDBpath, pLDDTDisorderThreshold, numberConsectuivelyDisorderThreshold, startRes=None, endRes=None):
@@ -189,7 +266,7 @@ def getOrderedFractionsFromPDB_Config(PDBpath, CONFIG, startRes=None, endRes=Non
                                       endRes=endRes)
 
 # ================================================================================================================================
-#   Functions For Data Frames with AlphaFold Sequence Matches Information 
+#   Functions For Data Frames with AlphaFold Sequence Matches Information, probabily should be in separate script 
 #   See https://github.com/jackent601/CheckAlphaFoldPDBSequences for examples/generation
 # ================================================================================================================================
 def addOrderFractionToDFofAFMatches(AFMatchDF, 
